@@ -205,3 +205,6 @@ __marimo__/
 # tmp
 .tmp*/
 **/.tmp*/
+
+# Data
+data/raw/Warman*.xlsx

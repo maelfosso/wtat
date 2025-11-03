@@ -1,0 +1,8 @@
+version: 2
+sources:
+- name: data
+  database: data
+  schema: main
+  tables:
+  - name: ads
+  - name: cleaned_profiles

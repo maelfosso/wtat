@@ -1,0 +1,39 @@
+version: 2
+
+models:
+- name: dim_date
+  description: "date dimension with most of the temporal attributes necessary for the analysis"
+  columns:
+  - name: date_id
+    description: "Primary key"
+    tests:
+    - unique
+    - not_null
+  - name: date
+    description: "Complete date"
+  - name: year
+    description: "Year"
+  - name: quarter
+    description: "Quarter (1-4)"
+  - name: month
+    description: "Month (1-12)"
+  - name: month_name
+    description: "Complete name of the month"
+  - name: day
+    description: "Day of the month (1-31)"
+  - name: day_of_week
+    description: "Day of the week (0=Sunday, 6=Satursday)"
+  - name: day_name
+    description: "Complete name of the day"
+  - name: is_weekend
+    description: "Indicating weekend (true/false)"
+- name: dim_ads
+  description: "ads dimension with their features"
+  columns:
+  - name: ad_id
+    description: "Primary key"
+    tests:
+    - unique
+    - not_null
+  - name: ad
+    description: "ad content"

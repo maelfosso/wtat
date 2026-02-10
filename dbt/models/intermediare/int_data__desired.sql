@@ -1,5 +1,5 @@
 select
-  profile_id as advertiser_id,
+  profile_id as desired_id,
   ad_id,
   name,
   sex,
@@ -10,10 +10,10 @@ select
   country_of_origin,
   region,
   village,
-  sector as sector_of_activity,
+  sector_of_activity,
   marital_status,
   number_of_children,
-  has_children
+  number_of_children > 0 as has_children,
   illness,
   has_illness,
   qualities,

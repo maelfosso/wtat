@@ -3,7 +3,7 @@ with base as (
   'residence' as link_type
   from {{ ref('int_data__desired') }}
   union
-  select distinct desired_id,  unnest(country_of_residence) as country, unnest(continent_of_residence) as continent,
+  select distinct desired_id,  unnest(country_of_origin) as country, unnest(continent_of_origin) as continent,
     'origin' as link_type
   from {{ ref('int_data__desired') }}
 )

@@ -97,6 +97,7 @@ def normalize_sex(value: str) -> str:
 # =====================================================
 
 country_map = {
+  "c": "Cameroun",
   "france": "France",
   "idf": "France",
   "ile-de-france": "France",
@@ -171,14 +172,20 @@ def normalize_and_map_country(value):
 
   parts = [p.strip() for p in text.split(",") if p.strip()]
 
-  result = []
+  result = {
+    'country': [],
+    'continent': []
+  }
   for p in parts:
     normalized_country = country_map.get(p, p.capitalize())
     continent = continent_map.get(normalized_country, "Autre")
-    result.append({
-      "country": normalized_country,
-      "continent": continent
-    })
+
+    result['country'].append(normalized_country)
+    result['continent'].append(continent)
+
+  result['continent'] = list(set(result["continent"]))
+  result['country'] = list(set(result['country']))
+
   return result
 
 

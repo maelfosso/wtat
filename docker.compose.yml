@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16.11-alpine3.23
+    container_name: wtat-db
+    ports:
+    - "5432:5432"
+    volumes:
+    - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: wtat
+      POSTGRES_PASSWORD: wtat_pwd
+      POSTGRES_USER: wtat_user
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wtat_user -d wtat"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+  label-studio:
+    image: heartexlabs/label-studio:20260209.232352-develop-c02a00a
+    container_name: wtat-label-studio
+    volumes:
+    - ./data/label-studio:/label-studio/project_data
+    - label_studio_data:/label-studio/data
+    ports:
+    - 8080:8080
+    environment:
+      LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
+      LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT: "/label-studio/project_data"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: wtat_user
+      POSTGRES_PASSWORD: wtat_pwd
+      POSTGRES_DB: wtat
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+models:
+  llm:
+    model: ai/gpt-oss:20B-F16
+
+volumes:
+  postgres_data
+  label_studio_data

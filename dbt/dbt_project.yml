@@ -31,8 +31,10 @@ clean-targets:         # directories to be removed by `dbt clean`
 models:
   wtat_dbt:
     staging:
-      schema: main
       +materialized: view
+      +schema: main
     marts:
-      schema: main
       +materialized: table
+      +schema: main
+flags:
+  require_generic_test_arguments_property: true

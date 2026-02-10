@@ -54,23 +54,23 @@ date_features as (
     extract(dow from date_day) as day_of_week,
 
     case extract(dow from date_day)
-      when 1 then 'Sunday'
-      when 2 then 'Monday'
-      when 3 then 'Tuesday'
-      when 4 then 'Wednesday'
-      when 5 then 'Thursday'
-      when 6 then 'Friday'
-      when 7 then 'Satursday'
+      when 0 then 'Sunday'
+      when 1 then 'Monday'
+      when 2 then 'Tuesday'
+      when 3 then 'Wednesday'
+      when 4 then 'Thursday'
+      when 5 then 'Friday'
+      when 6 then 'Saturday'
     end as day_name,
 
     case extract(dow from date_day)
-      when 1 then 'Sun'
-      when 2 then 'Mon'
-      when 3 then 'Tue'
-      when 4 then 'Wed'
-      when 5 then 'Thu'
-      when 6 then 'Fri'
-      when 7 then 'Sat'
+      when 0 then 'Sun'
+      when 1 then 'Mon'
+      when 2 then 'Tue'
+      when 3 then 'Wed'
+      when 4 then 'Thu'
+      when 5 then 'Fri'
+      when 6 then 'Sat'
     end as day_name_short,
 
     case when extract(month from date_day) = 1 and extract(day from date_day) = 1

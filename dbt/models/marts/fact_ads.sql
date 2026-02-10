@@ -1,6 +1,6 @@
 with ads_country as (
   select 
-    a.desired_id,
+    a.advertiser_id,
     c.country
   from {{ ref('dim_advertiser') }} a
   inner join {{ ref('bridge_advertiser_country') }} c on c.advertiser_id = a.advertiser_id
@@ -25,7 +25,7 @@ select
   end as number_of_ad_words,
 
 from {{ ref('dim_ads') }} a
-inner join posts p on a.post_id = p.id
+-- inner join posts p on a.post_id = p.id
 inner join {{ ref('dim_advertiser') }} w on w.ad_id = a.ad_id
 inner join {{ ref('dim_desired') }} s on s.ad_id = a.ad_id
-inner join ads_country ac on ac.desired_id = s.desired_id
+inner join ads_country ac on ac.advertiser_id = w.advertiser_id

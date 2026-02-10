@@ -5,7 +5,7 @@ import httpx
 import os
 import asyncio
 from typing import List, Dict
-from .prompts import system_message, PROMPT_DUAL_PROFILE_WITH_POSITIONS
+from .prompts_v2 import system_message, PROMPT_DUAL_PROFILE_WITH_POSITIONS
 
 class LLMService:
   def __init__(self, config):

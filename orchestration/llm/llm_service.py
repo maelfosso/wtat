@@ -53,14 +53,14 @@ class LLMService:
       result, stop_step = self.process_response(context, raw_content)
 
       if context:
-        context.log.debug(f"Ad {ad["id"]} traité - Profiles extraits:")
+        context.log.debug(f"Ad {ad['id']} traité - Profiles extraits:")
         context.log.debug(raw_content)
         context.log.debug(f"Stop step: {stop_step}")
         context.log.debug(result)
 
       return {"ad_id": ad["id"], "profiles": result['profiles'], "entities": result['entities']}
     except Exception as e:
-      error_msg = f"Erreur LLM pour l'ad {ad["id"]}: {str(e)}"
+      error_msg = f"Erreur LLM pour l'ad {ad['id']}: {str(e)}"
       if context:
         context.log.error(error_msg)
       

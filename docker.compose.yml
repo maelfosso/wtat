@@ -45,8 +45,8 @@ services:
 
 models:
   llm:
-    model: ai/gpt-oss:20B-F16
+    model: ai/gpt-oss-vllm
 
 volumes:
-  postgres_data
-  label_studio_data
+  postgres_data:
+  label_studio_data:

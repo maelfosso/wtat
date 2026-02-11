@@ -15,7 +15,6 @@ from orchestration.helpers.profiles.cleaning import (
   prepare_for_embedding,
   remove_suffixes
 )
-from orchestration.defs.resources import ClickHouseResource
 
 @dg.asset(
   deps=[ads],
@@ -207,7 +206,6 @@ def profiles_success_rate_check(
     }
   )
 
-
 @dg.asset(
   deps=[profiles],
   required_resource_keys={"database"}
@@ -280,15 +278,13 @@ def profiles_records(
   )
 
 @dg.asset(
-  deps=[profiles_records],
-  required_resource_keys={"clickhouse", "database"}
+  deps=[profiles_records]
 )
 def cleaned_profiles(
-  context: dg.AssetExecutionContext
+  context: dg.AssetExecutionContext,
+  database: DuckDBResource
 ) -> dg.MaterializeResult:
   """Cleaning profiles"""
-
-  database: DuckDBResource = context.resources.database
 
   with database.get_connection() as conn:
     profiles = conn.execute("""
@@ -368,9 +364,10 @@ def cleaned_profiles(
     "qualities", "values", "defects", "interests"
   ]
   df.drop(columns=[c for c in cols_to_drop if c in df.columns], inplace=True)
-  context.log.info(f"DF Columns: {df.columns}.\n{df[['country_of_residence_cleaned',
+  context.log.info(f"DF Columns: {df.columns})")
+  context.log.info(df[['country_of_residence_cleaned',
        'continent_of_residence_cleaned', 'country_of_origin_cleaned',
-       'continent_of_origin_cleaned']].head()}")
+       'continent_of_origin_cleaned']].head())
 
   df = remove_suffixes(df)
   ordered_cols = [

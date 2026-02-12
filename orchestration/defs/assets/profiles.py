@@ -19,10 +19,10 @@ from orchestration.helpers.profiles.cleaning import (
 @dg.asset(
   deps=[ads],
   required_resource_keys={"llm", "database"},
-  retry_policy=dg.RetryPolicy(
-    max_retries=3,
-    delay=60
-  )
+  # retry_policy=dg.RetryPolicy(
+  #   max_retries=3,
+  #   delay=60
+  # )
 )
 async def profiles(
   context: dg.AssetExecutionContext
@@ -44,7 +44,7 @@ async def profiles(
     return dg.MaterializeResult(
       metadata={
         "ads_processed": 0,
-        "profiles_extracted": 0
+        "extracted": 0
       }
     )
 
@@ -52,10 +52,8 @@ async def profiles(
     conn.execute("""
       CREATE OR REPLACE TABLE raw_profiles (
         ad_id INTEGER PRIMARY KEY,
-        profiles_advertiser JSON,
-        profiles_desired JSON,
-        entities_advertiser JSON,
-        entities_desired JSON,
+        advertiser JSON,
+        desired JSON,
         extraction_time DOUBLE,
         extraction_error TEXT           
       )
@@ -77,12 +75,11 @@ async def profiles(
       if not llm_result or not llm_result.get("profiles"):
         raise ValueError("LLM returned empty result")
 
-      profiles_advertiser = llm_result["profiles"].get("advertiser")
-      profiles_desired = llm_result["profiles"].get("desired")
-      entities_advertiser = llm_result["entities"].get("advertiser")
-      entities_desired = llm_result["entities"].get("desired")
+      context.log.info("Profiles...", llm_result)
+      advertiser = llm_result["profiles"].get("advertiser")
+      desired = llm_result["profiles"].get("desired")
 
-      if not profiles_advertiser or not profiles_desired:
+      if not advertiser or not desired:
         raise ValueError("Incomplete profile data (missing advertiser/desired)")
       
       extraction_time = time.time() - start_time
@@ -90,9 +87,9 @@ async def profiles(
       with database.get_connection() as conn:
         conn.execute("""
           INSERT OR REPLACE INTO raw_profiles
-                    (ad_id, profiles_advertiser, profiles_desired, entities_advertiser, entities_desired, extraction_time, extraction_error)
-          VALUES (?, ?, ?, ?, ?, ?, NULL)
-        """, [ad_id, profiles_advertiser, profiles_desired, entities_advertiser, entities_desired, extraction_time])
+            (ad_id, advertiser, desired, extraction_time, extraction_error)
+          VALUES (?, ?, ?, ?, NULL)
+        """, [ad_id, advertiser, desired, extraction_time])
 
         conn.execute("""
           UPDATE ads SET extraction_status = 'SUCCESS', extraction_time = ?
@@ -109,8 +106,8 @@ async def profiles(
       with database.get_connection() as conn:
         conn.execute("""
           INSERT OR REPLACE INTO raw_profiles
-                     (ad_id, profiles_advertiser, profiles_desired, entities_advertiser, entities_desired, extraction_time, extraction_error)
-          VALUES (?, NULL, NULL, NULL, NULL, ?, ?)
+                     (ad_id, advertiser, desired, extraction_time, extraction_error)
+          VALUES (?, NULL, NULL, ?, ?)
         """, [ad_id, extraction_time, error_msg])
 
         conn.execute("""
@@ -150,14 +147,19 @@ async def profiles(
     )
 
   with database.get_connection() as conn:
-    total_profiles = conn.execute("SELECT COUNT(*) FROM raw_profiles WHERE advertiser is NOT NULL AND desired is NOT NULL").fetchone()[0]
+    total_profiles = conn.execute("""
+      SELECT COUNT(*)
+      FROM raw_profiles
+      WHERE advertiser is NOT NULL
+      AND desired is NOT NULL
+    """).fetchone()[0]
 
   return dg.MaterializeResult(
     metadata={
       "ads_processed": dg.MetadataValue.int(len(ads_df)),
-      "profiles_success": dg.MetadataValue.int(len(successes)),
-      "profiles_failed": dg.MetadataValue.int(len(failures)),
-      "total_profiles_in_db": dg.MetadataValue.int(total_profiles),
+      "success": dg.MetadataValue.int(len(successes)),
+      "failed": dg.MetadataValue.int(len(failures)),
+      "total_in_db": dg.MetadataValue.int(total_profiles),
       "avg_extraction_time_sec": dg.MetadataValue.float(
         (sum(r["time"] for r in successes) / len(successes)) if successes else 0.0
       )
@@ -168,8 +170,8 @@ async def profiles(
   asset=profiles,
   blocking=True
 )
-def profiles_success_rate_check(
-  context: dg.AssetExecutionContext,
+def success_rate_check(
+  context: dg.AssetCheckExecutionContext,
   database: DuckDBResource
 ) -> dg.AssetCheckResult:
   """
@@ -210,7 +212,7 @@ def profiles_success_rate_check(
   deps=[profiles],
   required_resource_keys={"database"}
 )
-def profiles_records(
+def records(
   context: dg.AssetExecutionContext
 ) -> dg.MaterializeResult:
   """Transform desired, advertiser JSON into tabular data"""
@@ -218,16 +220,16 @@ def profiles_records(
   database: DuckDBResource = context.resources.database
   
   with database.get_connection() as conn:
-    raw_profiles_df = conn.execute("""
+    raw_df = conn.execute("""
       SELECT ad_id, advertiser, desired
       FROM raw_rofiles
       WHERE extraction_error IS NULL                    
     """)
 
-  context.log.info(f"Processing {len(raw_profiles_df)} profiles JSON -> Tabular")
+  context.log.info(f"Processing {len(raw_df)} profiles JSON -> Tabular")
 
   flat_rows = []
-  for _, row in raw_profiles_df.iterrows():
+  for _, row in raw_df.iterrows():
     transformed = transform_profile_data({
       "ad_id": row["ad_id"],
       "profiles": {
@@ -258,7 +260,7 @@ def profiles_records(
     ])
     
     conn.execute(f"""
-      CREATE OR REPLACE TABLE profiles_flat (
+      CREATE OR REPLACE TABLE flat (
         id INTEGER PRIMARY KEY,
         {columns_def},
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -266,11 +268,11 @@ def profiles_records(
     """)
     
     flat_df["id"] = range(1, len(flat_df) + 1)
-    conn.execute("INSERT INTO profiles_flat SELECT * FROM flat_df")
+    conn.execute("INSERT INTO flat SELECT * FROM flat_df")
     
   return dg.MaterializeResult(
     metadata={
-      "input_profiles": len(raw_profiles_df),
+      "input_profiles": len(raw_df),
       "output_rows": len(flat_df),
       "advertiser_count": len(flat_df[flat_df["profile_type"] == "ADVERTISER"]),
       "desired_count": len(flat_df[flat_df["profile_type"] == "DESIRED"]),
@@ -278,7 +280,7 @@ def profiles_records(
   )
 
 @dg.asset(
-  deps=[profiles_records]
+  deps=[records]
 )
 def cleaned_profiles(
   context: dg.AssetExecutionContext,

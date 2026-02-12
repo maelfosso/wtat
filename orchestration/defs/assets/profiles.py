@@ -1,6 +1,8 @@
 import dagster as dg
 from dagster_duckdb import DuckDBResource
 import time
+from datetime import datetime 
+import json
 import pandas as pd
 import asyncio
 from .ads import ads
@@ -170,7 +172,7 @@ async def profiles(
   asset=profiles,
   blocking=True
 )
-def success_rate_check(
+def profile_success_rate_check(
   context: dg.AssetCheckExecutionContext,
   database: DuckDBResource
 ) -> dg.AssetCheckResult:
@@ -209,22 +211,20 @@ def success_rate_check(
   )
 
 @dg.asset(
-  deps=[profiles],
-  required_resource_keys={"database"}
+  deps=[profiles]
 )
 def records(
-  context: dg.AssetExecutionContext
+  context: dg.AssetExecutionContext,
+  database: DuckDBResource
 ) -> dg.MaterializeResult:
   """Transform desired, advertiser JSON into tabular data"""
-
-  database: DuckDBResource = context.resources.database
   
   with database.get_connection() as conn:
     raw_df = conn.execute("""
       SELECT ad_id, advertiser, desired
-      FROM raw_rofiles
+      FROM raw_profiles
       WHERE extraction_error IS NULL                    
-    """)
+    """).fetch_df()
 
   context.log.info(f"Processing {len(raw_df)} profiles JSON -> Tabular")
 
@@ -233,8 +233,8 @@ def records(
     transformed = transform_profile_data({
       "ad_id": row["ad_id"],
       "profiles": {
-        "advertiser": row["advertiser"],
-        "desired": row["desired"]
+        "advertiser": json.loads(row["advertiser"]),
+        "desired": json.loads(row["desired"])
       }
     })
 
@@ -252,23 +252,22 @@ def records(
   with database.get_connection() as conn:
     columns_def = ", ".join([
       f"{col} VARCHAR" if flat_df[col].dtype == "object" else 
-      f"{col} INTEGER" if pd.api.types.is_integer_dtype(flat_df[col]) else
+      f"{col} INTEGER" + (" PRIMARY KEY" if col == "id" else "") if pd.api.types.is_integer_dtype(flat_df[col]) else
       f"{col} DOUBLE" if pd.api.types.is_float_dtype(flat_df[col]) else
       f"{col} BOOLEAN" if pd.api.types.is_bool_dtype(flat_df[col]) else
       f"{col} VARCHAR"
       for col in flat_df.columns
     ])
-    
+
     conn.execute(f"""
-      CREATE OR REPLACE TABLE flat (
-        id INTEGER PRIMARY KEY,
+      CREATE OR REPLACE TABLE profiles (
         {columns_def},
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     """)
-    
-    flat_df["id"] = range(1, len(flat_df) + 1)
-    conn.execute("INSERT INTO flat SELECT * FROM flat_df")
+
+    flat_df['created_at'] = datetime.now()
+    conn.execute("INSERT INTO profiles SELECT * FROM flat_df")
     
   return dg.MaterializeResult(
     metadata={

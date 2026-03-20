@@ -63,11 +63,9 @@ def transform_profile_data(ad_data: Dict[str, Any]) -> List[Dict[str, Any]]:
       'has_children': raw_profile.get('HAS_CHILDREN') == 'Oui' if raw_profile.get('HAS_CHILDREN') else False,
       'number_of_children': raw_profile.get('NUMBER_OF_CHILDREN'),
       
-      # ✅ NOUVEAU CHAMP : PRIMARY_COUNTRY_OF_RESIDENCE (fallback sur ancien nom)
-      'country_of_residence': (
-        raw_profile.get('PRIMARY_COUNTRY_OF_RESIDENCE') or 
-        raw_profile.get('COUNTRY_OF_RESIDENCE')
-      ),
+      # ✅ NOUVEAU CHAMP : PRIMARY_COUNTRY_OF_RESIDENCE
+      'primary_country_of_residence': raw_profile.get('PRIMARY_COUNTRY_OF_RESIDENCE'), 
+      'country_of_residence': raw_profile.get('COUNTRY_OF_RESIDENCE'),
       
       # ✅ COUNTRY_OF_ORIGIN : gère liste (ancien) ou chaîne/null (nouveau)
       'country_of_origin': get_first_from_list_or_value(raw_profile.get('COUNTRY_OF_ORIGIN')),

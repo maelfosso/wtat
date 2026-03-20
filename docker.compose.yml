@@ -26,6 +26,9 @@ services:
     ports:
     - 8080:8080
     environment:
+      LABEL_STUDIO_USERNAME: wtat@wtat.com
+      LABEL_STUDIO_PASSWORD: P@ssw0rd
+      LABEL_STUDIO_API_KEY: wtat
       LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED: "true"
       LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT: "/label-studio/project_data"
       POSTGRES_HOST: postgres
@@ -45,8 +48,8 @@ services:
 
 models:
   llm:
-    model: ai/gpt-oss:20B-F16
+    model: ai/gpt-oss-vllm
 
 volumes:
-  postgres_data
-  label_studio_data
+  postgres_data:
+  label_studio_data:

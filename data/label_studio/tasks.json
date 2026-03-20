@@ -1,0 +1,270 @@
+[
+  {
+    "id": 1,
+    "data": {
+      "text": "Bonjour au  grand frère Warman et à tata Paule! Je tiens à vous remercier pour le grand travail que vous abattez au sein de la communauté. Je suis une  camerounaise âgé de 35ans résident au Canada. \n\nCélibataire sans enfant, en début de carrière, pèse 70kg/ 1.70. J'attends souvent dire de moi que je suis  respectueuse, douce et travailleuse. \n\nJ'ai décidé de faire cette annonce à la recherche de mon mâle dominant avec qui on doit fonder une famille solide. \n\nAvoir entre 35-42ans , resident au Canada sans enfant ou un au trop. Il doit mesurer 1.72 et plus, etre travailleur, respectueux et le sens de l'humour... \n\nA toi qui lis ceci si tu remplis les critères et aimerait en savoir plus je t'attends chaleureusement \n\n👉👉👉 \nAmouradeux202201@yahoo.com"
+    },
+    "predictions": [
+      {
+        "model_version": "gpt-oss-v2.1",
+        "result": [
+          {
+            "id": "pred-1-advertiser-0",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 128,
+              "end": 140,
+              "text": "camerounaise",
+              "labels": [
+                "ADV_NATIONALITY"
+              ]
+            },
+            "score": 0.99
+          },
+          {
+            "id": "pred-1-advertiser-1",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 147,
+              "end": 152,
+              "text": "35ans",
+              "labels": [
+                "ADV_AGE"
+              ]
+            },
+            "score": 0.97
+          },
+          {
+            "id": "pred-1-advertiser-2",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 166,
+              "end": 172,
+              "text": "Canada",
+              "labels": [
+                "ADV_COUNTRY_OF_RESIDENCE"
+              ]
+            },
+            "score": 0.98
+          },
+          {
+            "id": "pred-1-advertiser-3",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 176,
+              "end": 187,
+              "text": "Célibataire",
+              "labels": [
+                "ADV_MARITAL_STATUS"
+              ]
+            },
+            "score": 0.96
+          },
+          {
+            "id": "pred-1-advertiser-4",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 188,
+              "end": 199,
+              "text": "sans enfant",
+              "labels": [
+                "ADV_HAS_CHILDREN"
+              ]
+            },
+            "score": 0.95
+          },
+          {
+            "id": "pred-1-advertiser-5",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 238,
+              "end": 242,
+              "text": "70kg",
+              "labels": [
+                "ADV_WEIGHT"
+              ]
+            },
+            "score": 0.94
+          },
+          {
+            "id": "pred-1-advertiser-6",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 244,
+              "end": 248,
+              "text": "1.70",
+              "labels": [
+                "ADV_HEIGHT"
+              ]
+            },
+            "score": 0.93
+          },
+          {
+            "id": "pred-1-advertiser-7",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 288,
+              "end": 299,
+              "text": "respectueuse",
+              "labels": [
+                "ADV_QUALITY"
+              ]
+            },
+            "score": 0.96
+          },
+          {
+            "id": "pred-1-advertiser-8",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 301,
+              "end": 306,
+              "text": "douce",
+              "labels": [
+                "ADV_QUALITY"
+              ]
+            },
+            "score": 0.95
+          },
+          {
+            "id": "pred-1-advertiser-9",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 311,
+              "end": 322,
+              "text": "travailleuse",
+              "labels": [
+                "ADV_QUALITY"
+              ]
+            },
+            "score": 0.94
+          },
+          {
+            "id": "pred-1-desired-0",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 440,
+              "end": 448,
+              "text": "35-42ans",
+              "labels": [
+                "DES_AGE"
+              ]
+            },
+            "score": 0.92
+          },
+          {
+            "id": "pred-1-desired-1",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 462,
+              "end": 468,
+              "text": "Canada",
+              "labels": [
+                "DES_COUNTRY_OF_RESIDENCE"
+              ]
+            },
+            "score": 0.97
+          },
+          {
+            "id": "pred-1-desired-2",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 469,
+              "end": 480,
+              "text": "sans enfant",
+              "labels": [
+                "DES_HAS_CHILDREN"
+              ]
+            },
+            "score": 0.93
+          },
+          {
+            "id": "pred-1-desired-3",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 505,
+              "end": 509,
+              "text": "1.72",
+              "labels": [
+                "DES_HEIGHT"
+              ]
+            },
+            "score": 0.91
+          },
+          {
+            "id": "pred-1-desired-4",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 520,
+              "end": 531,
+              "text": "travailleur",
+              "labels": [
+                "DES_QUALITY"
+              ]
+            },
+            "score": 0.9
+          },
+          {
+            "id": "pred-1-desired-5",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 533,
+              "end": 544,
+              "text": "respectueux",
+              "labels": [
+                "DES_QUALITY"
+              ]
+            },
+            "score": 0.9
+          },
+          {
+            "id": "pred-1-desired-6",
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {
+              "start": 551,
+              "end": 568,
+              "text": "sens de l'humour",
+              "labels": [
+                "DES_QUALITY"
+              ]
+            },
+            "score": 0.89
+          }
+        ]
+      }
+    ]
+  }
+]

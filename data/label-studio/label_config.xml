@@ -1,7 +1,4 @@
-from typing import List, Dict, Any
-import json
 
-LABEL_STUDIO_CONFIG = """
 <View>
   <Style>
     .ls-labels { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
@@ -76,79 +73,3 @@ LABEL_STUDIO_CONFIG = """
   <Header value="TEXTE DE L'ANNONCE"/>
   <Text name="text" value="$text"/>
 </View>
-"""
-
-def llm_output_to_label_studio(
-  ad_id: int,
-  ad_text: str,
-  llm_entities: List[Dict[str, Any]],
-  confidence_threshold: float = 0.7
-) -> Dict[str, Any]:
-  """
-  Convertit la sortie LLM enrichie en format Label Studio.
-  
-  Retourne un dictionnaire compatible avec l'API Label Studio:
-  {
-    "id": ad_id,
-    "data": {"text": ad_text},
-    "predictions": [...]  // Annotations pré-remplies par le LLM
-  }
-  """
-  predictions = []
-  prefixes = {
-    "advertiser": "ADV_",
-    "desired": "DES_"
-  }
-
-  for profile_type, prefix in prefixes.items():
-    entities = llm_entities.get(profile_type, [])
-  
-    for idx, entity in enumerate(entities):
-      if entity.get("confidence", 0) < confidence_threshold:
-        continue
-
-      prefixed_label = f"{prefix}{entity['label']}"
-        
-      prediction = {
-        "id": f"pred-{ad_id}-{profile_type}-{idx}",
-        "from_name": "label",
-        "to_name": "text",
-        "type": "labels",
-        "value": {
-          "start": entity["start"],
-          "end": entity["end"],
-          "text": entity["text"],
-          "score": entity.get("confidence", 0.5),
-          "labels": [prefixed_label]
-        },
-      }
-      predictions.append(prediction)
-    
-  return {
-    "id": ad_id,
-    "data": {"text": ad_text},
-    "predictions": [{
-      "model_version": "gpt-oss-v2.1",
-      "result": predictions
-    }]
-  }
-
-def export_to_label_studio_tasks(
-  ads_with_entities: List[Dict[str, Any]],
-  output_path: str = "label_studio_tasks.json"
-):
-  """Exporte une liste d'annonces au format Label Studio."""
-  tasks = [
-    llm_output_to_label_studio(
-      ad["id"],
-      ad["text"],
-      ad["entities"]
-    )
-    for ad in ads_with_entities
-  ]
-  
-  with open(output_path, "w", encoding="utf-8") as f:
-    json.dump(tasks, f, indent=2, ensure_ascii=False)
-  
-  print(f"✅ Exporté {len(tasks)} tâches vers {output_path}")
-  print(f"💡 Importer dans Label Studio : Settings → Import → JSON")

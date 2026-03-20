@@ -1,6 +1,8 @@
 import dagster as dg
 from dagster_duckdb import DuckDBResource
 import time
+from datetime import datetime 
+import json
 import pandas as pd
 import asyncio
 from .ads import ads
@@ -15,15 +17,14 @@ from orchestration.helpers.profiles.cleaning import (
   prepare_for_embedding,
   remove_suffixes
 )
-from orchestration.defs.resources import ClickHouseResource
 
 @dg.asset(
   deps=[ads],
   required_resource_keys={"llm", "database"},
-  retry_policy=dg.RetryPolicy(
-    max_retries=3,
-    delay=60
-  )
+  # retry_policy=dg.RetryPolicy(
+  #   max_retries=3,
+  #   delay=60
+  # )
 )
 async def profiles(
   context: dg.AssetExecutionContext
@@ -45,7 +46,7 @@ async def profiles(
     return dg.MaterializeResult(
       metadata={
         "ads_processed": 0,
-        "profiles_extracted": 0
+        "extracted": 0
       }
     )
 
@@ -53,10 +54,8 @@ async def profiles(
     conn.execute("""
       CREATE OR REPLACE TABLE raw_profiles (
         ad_id INTEGER PRIMARY KEY,
-        profiles_advertiser JSON,
-        profiles_desired JSON,
-        entities_advertiser JSON,
-        entities_desired JSON,
+        advertiser JSON,
+        desired JSON,
         extraction_time DOUBLE,
         extraction_error TEXT           
       )
@@ -78,12 +77,11 @@ async def profiles(
       if not llm_result or not llm_result.get("profiles"):
         raise ValueError("LLM returned empty result")
 
-      profiles_advertiser = llm_result["profiles"].get("advertiser")
-      profiles_desired = llm_result["profiles"].get("desired")
-      entities_advertiser = llm_result["entities"].get("advertiser")
-      entities_desired = llm_result["entities"].get("desired")
+      context.log.info("Profiles...", llm_result)
+      advertiser = llm_result["profiles"].get("advertiser")
+      desired = llm_result["profiles"].get("desired")
 
-      if not profiles_advertiser or not profiles_desired:
+      if not advertiser or not desired:
         raise ValueError("Incomplete profile data (missing advertiser/desired)")
       
       extraction_time = time.time() - start_time
@@ -91,9 +89,9 @@ async def profiles(
       with database.get_connection() as conn:
         conn.execute("""
           INSERT OR REPLACE INTO raw_profiles
-                    (ad_id, profiles_advertiser, profiles_desired, entities_advertiser, entities_desired, extraction_time, extraction_error)
-          VALUES (?, ?, ?, ?, ?, ?, NULL)
-        """, [ad_id, profiles_advertiser, profiles_desired, entities_advertiser, entities_desired, extraction_time])
+            (ad_id, advertiser, desired, extraction_time, extraction_error)
+          VALUES (?, ?, ?, ?, NULL)
+        """, [ad_id, advertiser, desired, extraction_time])
 
         conn.execute("""
           UPDATE ads SET extraction_status = 'SUCCESS', extraction_time = ?
@@ -110,8 +108,8 @@ async def profiles(
       with database.get_connection() as conn:
         conn.execute("""
           INSERT OR REPLACE INTO raw_profiles
-                     (ad_id, profiles_advertiser, profiles_desired, entities_advertiser, entities_desired, extraction_time, extraction_error)
-          VALUES (?, NULL, NULL, NULL, NULL, ?, ?)
+                     (ad_id, advertiser, desired, extraction_time, extraction_error)
+          VALUES (?, NULL, NULL, ?, ?)
         """, [ad_id, extraction_time, error_msg])
 
         conn.execute("""
@@ -151,14 +149,19 @@ async def profiles(
     )
 
   with database.get_connection() as conn:
-    total_profiles = conn.execute("SELECT COUNT(*) FROM raw_profiles WHERE advertiser is NOT NULL AND desired is NOT NULL").fetchone()[0]
+    total_profiles = conn.execute("""
+      SELECT COUNT(*)
+      FROM raw_profiles
+      WHERE advertiser is NOT NULL
+      AND desired is NOT NULL
+    """).fetchone()[0]
 
   return dg.MaterializeResult(
     metadata={
       "ads_processed": dg.MetadataValue.int(len(ads_df)),
-      "profiles_success": dg.MetadataValue.int(len(successes)),
-      "profiles_failed": dg.MetadataValue.int(len(failures)),
-      "total_profiles_in_db": dg.MetadataValue.int(total_profiles),
+      "success": dg.MetadataValue.int(len(successes)),
+      "failed": dg.MetadataValue.int(len(failures)),
+      "total_in_db": dg.MetadataValue.int(total_profiles),
       "avg_extraction_time_sec": dg.MetadataValue.float(
         (sum(r["time"] for r in successes) / len(successes)) if successes else 0.0
       )
@@ -169,8 +172,8 @@ async def profiles(
   asset=profiles,
   blocking=True
 )
-def profiles_success_rate_check(
-  context: dg.AssetExecutionContext,
+def profile_success_rate_check(
+  context: dg.AssetCheckExecutionContext,
   database: DuckDBResource
 ) -> dg.AssetCheckResult:
   """
@@ -207,34 +210,31 @@ def profiles_success_rate_check(
     }
   )
 
-
 @dg.asset(
-  deps=[profiles],
-  required_resource_keys={"database"}
+  deps=[profiles]
 )
-def profiles_records(
-  context: dg.AssetExecutionContext
+def records(
+  context: dg.AssetExecutionContext,
+  database: DuckDBResource
 ) -> dg.MaterializeResult:
   """Transform desired, advertiser JSON into tabular data"""
-
-  database: DuckDBResource = context.resources.database
   
   with database.get_connection() as conn:
-    raw_profiles_df = conn.execute("""
+    raw_df = conn.execute("""
       SELECT ad_id, advertiser, desired
-      FROM raw_rofiles
+      FROM raw_profiles
       WHERE extraction_error IS NULL                    
-    """)
+    """).fetch_df()
 
-  context.log.info(f"Processing {len(raw_profiles_df)} profiles JSON -> Tabular")
+  context.log.info(f"Processing {len(raw_df)} profiles JSON -> Tabular")
 
   flat_rows = []
-  for _, row in raw_profiles_df.iterrows():
+  for _, row in raw_df.iterrows():
     transformed = transform_profile_data({
       "ad_id": row["ad_id"],
       "profiles": {
-        "advertiser": row["advertiser"],
-        "desired": row["desired"]
+        "advertiser": json.loads(row["advertiser"]),
+        "desired": json.loads(row["desired"])
       }
     })
 
@@ -252,27 +252,26 @@ def profiles_records(
   with database.get_connection() as conn:
     columns_def = ", ".join([
       f"{col} VARCHAR" if flat_df[col].dtype == "object" else 
-      f"{col} INTEGER" if pd.api.types.is_integer_dtype(flat_df[col]) else
+      f"{col} INTEGER" + (" PRIMARY KEY" if col == "id" else "") if pd.api.types.is_integer_dtype(flat_df[col]) else
       f"{col} DOUBLE" if pd.api.types.is_float_dtype(flat_df[col]) else
       f"{col} BOOLEAN" if pd.api.types.is_bool_dtype(flat_df[col]) else
       f"{col} VARCHAR"
       for col in flat_df.columns
     ])
-    
+
     conn.execute(f"""
-      CREATE OR REPLACE TABLE profiles_flat (
-        id INTEGER PRIMARY KEY,
+      CREATE OR REPLACE TABLE profiles (
         {columns_def},
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     """)
-    
-    flat_df["id"] = range(1, len(flat_df) + 1)
-    conn.execute("INSERT INTO profiles_flat SELECT * FROM flat_df")
+
+    flat_df['created_at'] = datetime.now()
+    conn.execute("INSERT INTO profiles SELECT * FROM flat_df")
     
   return dg.MaterializeResult(
     metadata={
-      "input_profiles": len(raw_profiles_df),
+      "input_profiles": len(raw_df),
       "output_rows": len(flat_df),
       "advertiser_count": len(flat_df[flat_df["profile_type"] == "ADVERTISER"]),
       "desired_count": len(flat_df[flat_df["profile_type"] == "DESIRED"]),
@@ -280,15 +279,13 @@ def profiles_records(
   )
 
 @dg.asset(
-  deps=[profiles_records],
-  required_resource_keys={"clickhouse", "database"}
+  deps=[records]
 )
 def cleaned_profiles(
-  context: dg.AssetExecutionContext
+  context: dg.AssetExecutionContext,
+  database: DuckDBResource
 ) -> dg.MaterializeResult:
   """Cleaning profiles"""
-
-  database: DuckDBResource = context.resources.database
 
   with database.get_connection() as conn:
     profiles = conn.execute("""
@@ -368,9 +365,10 @@ def cleaned_profiles(
     "qualities", "values", "defects", "interests"
   ]
   df.drop(columns=[c for c in cols_to_drop if c in df.columns], inplace=True)
-  context.log.info(f"DF Columns: {df.columns}.\n{df[['country_of_residence_cleaned',
+  context.log.info(f"DF Columns: {df.columns})")
+  context.log.info(df[['country_of_residence_cleaned',
        'continent_of_residence_cleaned', 'country_of_origin_cleaned',
-       'continent_of_origin_cleaned']].head()}")
+       'continent_of_origin_cleaned']].head())
 
   df = remove_suffixes(df)
   ordered_cols = [
@@ -418,200 +416,3 @@ def cleaned_profiles(
       "Cleaned Profiles columns": df.columns.to_list()
     }
   )
-
-
-
-# @dg.asset(
-#   deps=[ads],
-#   required_resource_keys={"llm", "database"}
-# )
-# async def extracted_profiles(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
-#   llm: LLMService = context.resources.llm
-#   database: DuckDBResource = context.resources.database
-
-#   query = """
-#     SELECT * FROM ads
-#   """
-#   with database.get_connection() as conn:
-#     ads = conn.execute(query).fetch_df()
-
-#   context.log.info(f"Processing {len(ads)} for profiles extractions")
-
-#   extracted_profiles = []
-#   for index, ad in ads.iterrows():
-#     ad_id = ad['id']
-#     ad_text = ad['ad']
-
-#     context.log.info(f"Processing AD {ad_id}: {ad_text[:100]}...")
-#     with database.get_connection() as conn:
-#       conn.execute("""
-#         UPDATE ads
-#         SET extraction_status = 'PENDING'
-#         WHERE id = ?
-#       """, [ad_id])
-
-#     start_time = time.time()
-#     try:
-#       try:
-#         llm_results = await llm.extract_profile_from_single_ad(ad, context=context)
-#         context.log.info("LLM RESULTS")
-#         context.log.info(llm_results)
-#         # if llm_results and len(llm_results) > 0:
-#         #   llm_result = llm_results[0]
-#         #   context.log.info("Result for LLM extraction: ", llm_result)
-#         # else:
-#         #   raise Exception("No LLM results returned")
-#         llm_result = llm_results
-#       except Exception as e:
-#         extraction_time = time.time() - start_time
-#         context.log.error(f"An error occur : after {extraction_time}\n {str(e)}")
-
-#         with database.get_connection() as conn:
-#           conn.execute("""
-#             UPDATE ads
-#             SET extraction_status = 'FAILED', extraction_time = ?
-#             WHERE id = ?
-#           """, [str(extraction_time), ad_id])
-
-#       context.log.info("Processing LLM Result, the profile extracted")
-#       context.log.info(llm_result)
-#       ad_profiles = llm_result.get('profiles', {})
-#       extraction_time = time.time() - start_time
-#       if not ad_profiles.get('advertiser') or not ad_profiles.get('desired'):
-#         with database.get_connection() as conn:
-#           conn.execute("""
-#             UPDATE ads
-#             SET extraction_status = 'FAILED', extraction_time = ?
-#             WHERE id = ?
-#           """, [str(extraction_time), ad_id])
-
-#         context.log.info(f"Incomplete profile data for AD {ad_id}")
-#       else:
-#         with database.get_connection() as conn:
-#           conn.execute("""
-#             UPDATE ads
-#             SET extraction_status = 'SUCCESS', extraction_time = ?
-#             WHERE id = ?
-#           """, [str(extraction_time), ad_id])
-
-#         extracted_profiles.append(llm_result)
-#         context.log.info("AD %s processed successfully in batch", ad_id)
-#       context.log.info("AD %s processed successfully", ad_id)
-#     except Exception as e:
-#       context.log.info(f"error occurred: {e}")
-
-#   return dg.MaterializeResult(
-#       metadata={
-#         "Nombre d'annonces traitées": len(ads),
-#         "Profils extraits": len(extracted_profiles)
-#       },
-#       value=extracted_profiles
-#     )
-
-# @dg.asset(
-#   deps=[extracted_profiles],
-#   required_resource_keys={"llm", "database"}
-# )
-# def inserted_profiles(
-#   context: dg.AssetExecutionContext,
-#   extracted_profiles: list
-# ) -> dg.MaterializeResult:
-#   database: DuckDBResource = context.resources.database
-
-#   extracted_profiles = extracted_profiles
-
-#   create_table_query = """
-#     CREATE TABLE IF NOT EXISTS profiles (
-#       id INTEGER PRIMARY KEY,
-#       ad_id INTEGER,
-#       profile_type VARCHAR(10),
-#       name VARCHAR(100),
-#       religion VARCHAR(150),
-#       age VARCHAR(120),
-#       sex VARCHAR(110),
-#       country_of_residence VARCHAR[],
-#       country_of_origin VARCHAR(100),
-#       region_of_origin VARCHAR(100),
-#       village_of_origin VARCHAR(100),
-#       sector_of_activity VARCHAR(100),
-#       marital_status VARCHAR(150),
-#       has_children BOOLEAN,
-#       number_of_children TEXT,
-#       qualities VARCHAR[],
-#       values VARCHAR[],
-#       defects VARCHAR[],
-#       interests VARCHAR[],
-#       height VARCHAR(120),
-#       weight VARCHAR(120),
-#       physical_appearance TEXT,
-#       economic_situation TEXT,
-#       education_level TEXT,
-#       illness TEXT,
-#       relationship_goal TEXT,
-#       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-#       UNIQUE (ad_id, profile_type)
-#     )
-#     """
-    
-#   with database.get_connection() as conn:
-#     conn.execute(create_table_query)
-    
-#   all_profiles = []
-#   for profile in extracted_profiles:
-#     profile_to_insert = transform_profile_data(profile)
-#     all_profiles.extend(profile_to_insert)
-
-#   insert_query = """
-#     INSERT OR IGNORE INTO profiles (
-#         id, ad_id, profile_type, name, religion, age, sex, country_of_residence,
-#         country_of_origin, region_of_origin, village_of_origin, sector_of_activity,
-#         marital_status, has_children, number_of_children, qualities, values,
-#         defects, interests, height, weight, physical_appearance, economic_situation,
-#         education_level, illness, relationship_goal
-#     ) VALUES (
-#         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-#     )
-#     """
-  
-#   with database.get_connection() as conn:
-  
-#     values = []
-#     for profile in all_profiles:
-#       values.append([
-#         profile['id'],
-#         profile['ad_id'],
-#         profile['profile_type'],
-#         profile['name'],
-#         profile['religion'],
-#         profile['age'],
-#         profile['sex'],
-#         profile['country_of_residence'],
-#         profile['country_of_origin'],
-#         profile['region_of_origin'],
-#         profile['village_of_origin'],
-#         profile['sector_of_activity'],
-#         profile['marital_status'],
-#         profile['has_children'],
-#         profile['number_of_children'],
-#         profile['qualities'],
-#         profile['values'],
-#         profile['defects'],
-#         profile['interests'],
-#         profile['height'],
-#         profile['weight'],
-#         profile['physical_appearance'],
-#         profile['economic_situation'],
-#         profile['education_level'],
-#         profile['illness'],
-#         profile['relationship_goal']
-#     ])
-      
-#     conn.executemany(insert_query, values)
-  
-#   return dg.MaterializeResult(
-#     metadata={
-#       "Profile Inserted": len(all_profiles),
-#       "Adversiter Profiles": len([p for p in all_profiles if p['profile_type'] == 'ADVERTISER']),
-#       "Desired Profiles": len([p for p in all_profiles if p['profile_type'] == 'DESIRED'])
-#     }
-#   )

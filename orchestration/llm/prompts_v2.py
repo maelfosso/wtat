@@ -277,12 +277,13 @@ Pas de texte avant ou après. Pas de markdown (```json). Pas de commentaires.
 # =============================================================================
 
 PROMPT_DUAL_PROFILE_WITH_POSITIONS = """
-<system_instructions>
+<instruction_set>
+<system_identity>
 Tu es un expert en extraction d'entités nommées (NER) ET en structuration sémantique 
 pour annonces matrimoniales camerounaises. Tu dois produire deux types de sortie:
 1. Entités avec positions exactes dans le texte (pour annotation)
 2. Données structurées normalisées (pour base de données)
-</system_instructions>
+</system_identity>
 
 <task>
 Analyser l'annonce fournie et extraire DEUX profils DISTINCTS:
@@ -299,6 +300,37 @@ Format source: Texte brut avec potentiellement des emojis, caractères unicode,
 formatage variable (sauts de ligne irréguliers, texte compact).
 Objectif: Annotation dans Label Studio + import base de données.
 </context>
+
+<entity_definitions>
+  <definition name="NAME">Prénom, pseudonyme ou initiales. Souvent absent dans les annonces Facebook/Telegram.</definition>
+  <definition name="RELIGION">Appartenance religieuse explicite (ex: Catholique, Musulmane, "Craint Dieu"). Ne jamais déduire sans mention directe.</definition>
+  <definition name="AGE">Âge actuel ou tranche d'âge recherchée. Doit inclure l'unité dans la normalisation (ex: "35 ans").</definition>
+  <definition name="SEX">Genre biologique. À déduire des accords grammaticaux (ex: "camerounaise" -> Femme) ou des termes "mâle/femme".</definition>
+
+  <definition name="HEIGHT">Taille verticale. Normaliser systématiquement en "X.XX m".</definition>
+  <definition name="WEIGHT">Masse corporelle. Normaliser systématiquement en "XX kg".</definition>
+  <definition name="PHYSICAL_APPEARANCE">Attributs physiques qualitatifs (ex: "teint clair", "forme africaine", "élégante", "présentable"). Exclure taille et poids.</definition>
+
+  <definition name="PRIMARY_COUNTRY_OF_RESIDENCE">Pays actuel où réside la personne (ex: Canada, France, Cameroun).</definition>
+  <definition name="COUNTRY_OF_ORIGIN">Pays des racines familiales, uniquement si mentionné explicitement (ex: "Originaire du Cameroun").</definition>
+  <definition name="OTHER_LOCATIONS_MENTIONED">Villes, régions ou quartiers spécifiques (ex: "Laval", "Douala", "Région de l'Ouest").</definition>
+
+  <definition name="SECTOR_OF_ACTIVITY">Métier, domaine professionnel ou titre (ex: "Ingénieur", "Commerçant", "Analyste").</definition>
+  <definition name="ECONOMIC_SITUATION">État des finances ou maturité de carrière (ex: "stable", "en début de carrière", "posé").</definition>
+  <definition name="EDUCATION_LEVEL">Diplômes ou niveau d'instruction (ex: "Master", "Bac+5", "universitaire").</definition>
+
+  <definition name="MARITAL_STATUS">Statut légal ou matrimonial (ex: "Célibataire", "Divorcé", "Veuf").</definition>
+  <definition name="HAS_CHILDREN">Indicateur binaire "Oui" ou "Non" basé sur la mention d'enfants.</definition>
+  <definition name="NUMBER_OF_CHILDREN">Nombre exact d'enfants. Convertir les mots en chiffres (ex: "deux" -> "2").</definition>
+
+  <definition name="QUALITIES">Traits de caractère positifs mentionnés (ex: "douce", "travailleur", "respectueuse").</definition>
+  <definition name="VALUES">Principes de vie ou croyances morales (ex: "famille solide", "respect mutuel", "pas de 50/50").</definition>
+  <definition name="DEFECTS">Traits de caractère négatifs ou points à améliorer mentionnés par l'annonceur.</definition>
+  <definition name="INTERESTS">Loisirs, passions ou activités de détente (ex: "voyages", "cuisine", "sport").</definition>
+  <definition name="ILLNESS">État de santé ou maladies mentionnées explicitement (souvent absent).</definition>
+
+  <definition name="RELATIONSHIP">Uniquement pour le profil 'DESIRED'. Résumé textuel des critères du partenaire idéal.</definition>
+</entity_definitions>
 
 <output_schema>
 {
@@ -402,6 +434,7 @@ Objectif: Annotation dans Label Studio + import base de données.
    - Guillemets doubles obligatoires
    - Pas de trailing commas
 </constraints>
+<instruction_set>
 
 <few_shot_examples>
 
@@ -777,17 +810,17 @@ Texte: "Bonjour au  grand frère Warman et à tata Paule! Je tiens à vous remer
    → Appliquer les mêmes règles de parsing (ex: "29 ans Enfant 0Célibataire..." → séparer les entités)
 </edge_cases>
 
-<ad_to_process>
+<input_data>
 {ad_text}
-</ad_to_process>
+</input_data>
 
-<final_instruction>
+<final_enforcement>
 Répondre UNIQUEMENT avec un objet JSON valide conforme au <output_schema>.
 Vérifier que: 
 - Les positions sont exactes (text[start:end] = valeur extraite)
 - Le JSON est parseable sans erreur
 - Pas de texte avant/après le JSON
-</final_instruction>
+</final_enforcement>
 """
 
 

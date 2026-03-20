@@ -5,7 +5,7 @@ import httpx
 import os
 import asyncio
 from typing import List, Dict
-from .prompts_v2 import system_message, PROMPT_DUAL_PROFILE_WITH_POSITIONS
+from .prompts_v3 import SYSTEM_MESSAGE, PROMPT_DUAL_PROFILES_EXTRACTION
 
 class LLMService:
   def __init__(self, config):
@@ -25,13 +25,19 @@ class LLMService:
     if context:
       context.log.info(f"Debut de l'extraction des profiles pour l'ad {ad['id']}: {ad['ad'][:100]}")
 
-    prompt_content = PROMPT_DUAL_PROFILE_WITH_POSITIONS.replace("{ad_text}", ad['ad'])
+    prompt_content = PROMPT_DUAL_PROFILES_EXTRACTION.replace("{ad_text}", ad['ad'])
     context.log.info(prompt_content[:100])
 
     try:
       messages = [
-        { "role": "system", "content": system_message },
-        { "role": "user", "content": prompt_content }
+        { "role": "system", "content": SYSTEM_MESSAGE },
+        { 
+          "role": "user",
+          "content": [{
+            "type": "text",
+            "text": prompt_content
+          }]
+        }
       ]
       
       if context:
@@ -44,6 +50,9 @@ class LLMService:
         top_p=0.9,
         max_tokens=20000,
         timeout=httpx.Timeout(self.timeout, connect=10.0),
+        extra_body={
+          "reasoning_effort": "low"
+        },
         response_format={
           'type': "json_object"
         }
@@ -51,23 +60,29 @@ class LLMService:
 
       if context:
         context.log.debug("Reponse recue du LLM")
+        context.log.debug(response.choices[0])
 
       raw_content = response.choices[0].message.content
+      if not raw_content:
+        context.log.info(response)
+        context.log.error("Response LLM vide (conent et reasonning_content sont null)")
+        return {"ad_id": ad['id'], "profiles": {}, "error": "empty_response"}
+
       result, stop_step = self.process_response(context, raw_content)
 
       if context:
-        context.log.debug(f"Ad {ad["id"]} traité - Profiles extraits:")
+        context.log.debug(f"Ad {ad['id']} traité - Profiles extraits:")
         context.log.debug(raw_content)
         context.log.debug(f"Stop step: {stop_step}")
         context.log.debug(result)
 
-      return {"ad_id": ad["id"], "profiles": result['profiles'], "entities": result['entities']}
+      return {"ad_id": ad["id"], "profiles": result['profiles']}
     except Exception as e:
-      error_msg = f"Erreur LLM pour l'ad {ad["id"]}: {str(e)}"
+      error_msg = f"Erreur LLM pour l'ad {ad['id']}: {str(e)}"
       if context:
         context.log.error(error_msg)
       
-      return {"ad_id": ad["id"], "profiles": {}, "entities": {}, "error": "error_msg"}
+      return {"ad_id": ad["id"], "profiles": {}, "error": "error_msg"}
   
   async def extract_profiles(self, ads: List[Dict], context=None) -> List[Dict]:
     """Extrait les profiles depuis une liste d'ads avec support batch"""
@@ -157,7 +172,7 @@ class LLMService:
     
     prompts = []
     for ad in batch_ads:
-      prompt_content = PROMPT_DUAL_PROFILE_WITH_POSITIONS.format(ad_text=ad['ad'])
+      prompt_content = PROMPT_DUAL_PROFILES_EXTRACTION.format(ad_text=ad['ad'])
       prompts.append({
         "ad_id": ad["id"],
         "prompt": prompt_content,
@@ -169,7 +184,7 @@ class LLMService:
       messages = [
         {
           "role": "system", 
-          "content": system_message
+          "content": SYSTEM_MESSAGE
         },
         {
           "role": "user",
@@ -207,7 +222,7 @@ class LLMService:
   async def _process_single_ad(self, ad: Dict, context=None) -> Dict:
     """Traite une seule ad"""
     try:
-      prompt_content = PROMPT_DUAL_PROFILE_WITH_POSITIONS.format(ad_text=ad['ad'])
+      prompt_content = PROMPT_DUAL_PROFILES_EXTRACTION.format(ad_text=ad['ad'])
       
       if context:
         context.log.debug(f"🔍 Traitement de l'ad {ad.get('ad_id')} (type: {ad.get('post_type')})")
@@ -215,7 +230,7 @@ class LLMService:
       response = await self.client.chat.completions.create(
         model=self.model,
         messages=[
-          {"role": "system", "content": system_message},
+          {"role": "system", "content": SYSTEM_MESSAGE},
           {"role": "user", "content": prompt_content}
         ],
         temperature=0.1,
@@ -321,41 +336,35 @@ class LLMService:
   
   def process_response(self, context, raw: str) -> dict:
     """Processing a response"""
-    default_response = {"entities": {"advertiser": {}, "desired": {}}, "profiles": {"advertiser": {}, "desired": {}}}
+    default_response = {"profiles": {"advertiser": {}, "desired": {}}}
 
     try:
-        context.log.info(f"Raw avant nettoyage: '{raw[:200]}...'")
+        context.log.info(f"Raw avant nettoyage: {raw}")
         raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL)
         raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.IGNORECASE)
         raw = re.sub(r'\s*```$', '', raw)
         raw = raw.strip()
-        context.log.info(f"Raw après nettoyage: {raw[:200]}")
+        context.log.info(f"Raw après nettoyage: {raw}")
         json_data = json.loads(raw)
 
         # Vérifications de structure
         if not isinstance(json_data, dict):
             return default_response, 0
             
-        if "entities" not in json_data or "profiles" not in json_data:
+        if "profiles" not in json_data:
             return default_response, 1
 
-        if not isinstance(json_data["entities"], dict) or not isinstance(json_data["profiles"], dict):
+        if not isinstance(json_data["profiles"], dict):
             return default_response, 2
 
-        if "desired" not in json_data["entities"] or "advertiser" not in json_data["entities"]:
-            return default_response, 3
-            
         if "desired" not in json_data["profiles"] or "advertiser" not in json_data["profiles"]:
             return default_response, 4
-
-        if not isinstance(json_data["entities"]["desired"], list) or not isinstance(json_data["entities"]["advertiser"], list):
-            return default_response, 5
 
         if not isinstance(json_data["profiles"]["desired"], dict) or not isinstance(json_data["profiles"]["advertiser"], dict):
             return default_response, 6
         
         return json_data, None
     except (json.JSONDecodeError, Exception) as e:
-        print(f"Erreur lors du parsing JSON: {e}")
-        print(f"Raw reçu: {raw}")
+        context.log.error(f"Erreur lors du parsing JSON: {e}")
+        context.log.debug(f"Raw reçu: {raw}")
         return default_response, str(e)

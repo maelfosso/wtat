@@ -209,3 +209,5 @@ __marimo__/
 # Data
 data/raw/Warman*.xlsx
 data/staging/data.duckdb
+**/data/
+warehouse.duckdb

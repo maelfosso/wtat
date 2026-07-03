@@ -38,7 +38,7 @@ llm_resource_configured = llm_resource.configured({
 })
 
 database_resource = DuckDBResource(
-  database = dg.EnvVar("DUCKDB_DATABASE")
+  database = dg.EnvVar("WTAT_DB_PATH")
 )
 
 @dg.definitions

@@ -10,6 +10,7 @@ dependencies = [
     "openai>=1.109.1",
     "openpyxl>=3.1.5",
     "pandas>=2.3.2",
+    "pydantic-settings>=2.14.2",
     "unidecode>=1.4.0",
 ]
 
@@ -34,5 +35,4 @@ root_module = "orchestration"
 registry_modules = [
     "orchestration.components.*",
 ]
-
 

@@ -13,10 +13,11 @@ pub fn get_posts_from_fb_pages(client: &Client, page_id: &String, cursor: Option
   if let Some(c) = cursor {
     url.push_str(&format!("&cursor={}", c));
   }
+  println!("Current URL: {}\n", url);
 
   let response = client.get(url).send()?;
   let text = response.text()?;
-  println!("DEBUG JSON: {}\n\n", text);
+  println!("DEBUG JSON: {}\n", text);
 
   let body = serde_json::from_str(&text).map_err(|e| {
     eprintln!("Parsing error: {}", e);

@@ -1,5 +1,5 @@
 # --- Étape de compilation ---
-FROM rust:1.75-slim AS builder
+FROM rust:1.85.0-bookworm AS builder
 
 WORKDIR /usr/src/app
 COPY . .

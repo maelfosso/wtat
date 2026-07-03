@@ -35,7 +35,6 @@ fn main() {
   } else {
     None
   };
-  //  Option<String> = None;
 
   let dir_path = format!("{}/{}", data_path, page_id);
   fs::create_dir_all(&dir_path).expect("Impossible to create a directory");
@@ -58,7 +57,7 @@ fn main() {
       break;
     }
 
-    println!("Collecting with cursor: {:?}", current_cursor);
+    println!("Collecting with cursor: {:?}\n", current_cursor);
 
     match get_posts_from_fb_pages(&client, &page_id, current_cursor.clone()) {
       Ok(response) => {

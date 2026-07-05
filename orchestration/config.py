@@ -21,4 +21,11 @@ class Settings(BaseSettings):
     in_flight_timeout_minutes: int = 60
     db_batch_size: int = 50
 
+    llm_api_base: str
+    llm_api_key: str
+    llm_model: str
+    llm_timeout: int = 300
+    llm_max_concurrent_requests: int = 5
+    llm_batch_size: int
+
 settings = Settings()

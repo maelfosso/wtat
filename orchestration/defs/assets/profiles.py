@@ -6,6 +6,7 @@ import json
 import pandas as pd
 import asyncio
 from .ads import ads
+from ...adapters.repository import Repository
 from orchestration.llm.llm_service import LLMService
 from orchestration.helpers.profiles.transform import transform_profile_data
 from orchestration.helpers.profiles.cleaning import (
@@ -21,10 +22,11 @@ from orchestration.helpers.profiles.cleaning import (
 @dg.asset(
   deps=[ads],
   required_resource_keys={"llm", "database"},
-  # retry_policy=dg.RetryPolicy(
-  #   max_retries=3,
-  #   delay=60
-  # )
+  retry_policy=dg.RetryPolicy(
+    max_retries=3,
+    delay=60,
+    backoff=dg.Backoff.EXPONENTIAL
+  )
 )
 async def profiles(
   context: dg.AssetExecutionContext
@@ -35,13 +37,9 @@ async def profiles(
   database: DuckDBResource = context.resources.database
 
   with database.get_connection() as conn:
-    ads_df = conn.execute("""
-      SELECT id, ad, post_type
-      FROM ads
-      WHERE extraction_status != 'SUCCESS'
-    """).fetch_df()
+    repo = Repository(conn)
+    ads_df = repo.fetch_ads_to_process()
 
-  context.log.info(f"LLM extraction for {len(ads_df)} ads")
   if ads_df.empty:
     return dg.MaterializeResult(
       metadata={
@@ -50,120 +48,57 @@ async def profiles(
       }
     )
 
-  with database.get_connection() as conn:
-    conn.execute("""
-      CREATE OR REPLACE TABLE raw_profiles (
-        ad_id INTEGER PRIMARY KEY,
-        advertiser JSON,
-        desired JSON,
-        extraction_time DOUBLE,
-        extraction_error TEXT           
-      )
-    """)
-  
-  async def extract_single_ad(ad):
-    ad_id = ad["id"]
-    start_time = time.time()
+  context.log.info(f"Extraction LLM pour {len(ads_df)} annonces")
+  sem = asyncio.Semaphore(10)
+
+  async def one(ad):
+    ad_id, t0 = ad["ad_id"], time.time()
 
     try:
       with database.get_connection() as conn:
-        conn.execute(
-          "UPDATE ads SET extraction_status = 'PENDING' WHERE id = ?",
-          [ad_id]
-        )
+        repo = Repository(conn)
+        repo.ad_extraction_started(ad_id)
 
-      llm_result = await llm.extract_profile_from_single_ad(ad, context=context)
+      profiles = await llm.extract_profile_from_single_ad(ad, context=context)
+      dt = time.time() - t0
 
-      if not llm_result or not llm_result.get("profiles"):
-        raise ValueError("LLM returned empty result")
-
-      context.log.info("Profiles...", llm_result)
-      advertiser = llm_result["profiles"].get("advertiser")
-      desired = llm_result["profiles"].get("desired")
-
-      if not advertiser or not desired:
-        raise ValueError("Incomplete profile data (missing advertiser/desired)")
+      with database.get_connection() as conn:
+        repo = Repository(conn)
+        repo.ad_extraction_success(ad_id, profiles, dt)
       
-      extraction_time = time.time() - start_time
-
-      with database.get_connection() as conn:
-        conn.execute("""
-          INSERT OR REPLACE INTO raw_profiles
-            (ad_id, advertiser, desired, extraction_time, extraction_error)
-          VALUES (?, ?, ?, ?, NULL)
-        """, [ad_id, advertiser, desired, extraction_time])
-
-        conn.execute("""
-          UPDATE ads SET extraction_status = 'SUCCESS', extraction_time = ?
-          WHERE id = ?
-        """, [extraction_time, ad_id])
-
-      context.log.info(f"✅ Successful extraction {ad_id}")
-      return {"ad_id": ad_id, "status": "success", "time": extraction_time}
-    
+      return {"ad_id": ad_id, "status": "success", "time": dt}
     except Exception as e:
-      extraction_time = time.time() - start_time
-      error_msg = str(e)[:500]
+      dt = time.time() - t0
 
       with database.get_connection() as conn:
-        conn.execute("""
-          INSERT OR REPLACE INTO raw_profiles
-                     (ad_id, advertiser, desired, extraction_time, extraction_error)
-          VALUES (?, NULL, NULL, ?, ?)
-        """, [ad_id, extraction_time, error_msg])
+        repo = Repository(conn)
+        repo.ad_extraction_failed(ad_id, dt)
 
-        conn.execute("""
-          UPDATE ads SET extraction_status = 'FAILURE', extraction_time = ?
-          WHERE id = ?
-        """, [extraction_time, ad_id])
+      context.log.warning(f"❌ {ad_id}: {str(e)[:200]}")
+      return {"ad_id": ad_id, "status": "failed", "time": dt}
 
-      context.log.warning(f"❌ Failed extraction {ad_id}: {error_msg}")
-      return {"ad_id": ad_id, "status": "failed", "time": extraction_time}
+  async def bounded(row):
+    async with sem:
+      return await one(row)
     
-  semaphore = asyncio.Semaphore(10)
-  async def bounded_extract(ad_row):
-    async with semaphore:
-      return await extract_single_ad(ad_row)
+  results = await asyncio.gather(*[bounded(r) for _, r in ads_df.iterrows()],
+                                 return_exceptions=True)
+  ok = [r for r in results if isinstance(r, dict) and r["status"] == "success"]
+  ko = [r for r in results if isinstance(r, dict) and r["status"] == "failed"]
   
-  tasks = [bounded_extract(row) for _, row in ads_df.iterrows()]
-  results = await asyncio.gather(*tasks, return_exceptions=True)
-  context.log.info(results)
-  successes = [r for r in results if isinstance(r, dict) and r["status"] == "success"]
-  failures = [r for r in results if isinstance(r, dict) and r["status"] == "failed"]
-
-  success_rate = len(successes) / len(ads_df)
-  context.log.info(
-    f"Success rate: {success_rate:.2%} ({len(successes)}/{len(ads_df)})"
-  )
-
   TARGET = 0.95
-  if success_rate < TARGET:
-    remaining_failures = len(failures)
-    context.log.warning(
-      f"Threshold not reached. {remaining_failures} ads will be retried"
-    )
-
-    raise dg.Failure(
-      f"Success rate {success_rate:.2%} below target {TARGET:.2%}. "
-      f"Failed ads: {len(failures)}"
-    )
-
-  with database.get_connection() as conn:
-    total_profiles = conn.execute("""
-      SELECT COUNT(*)
-      FROM raw_profiles
-      WHERE advertiser is NOT NULL
-      AND desired is NOT NULL
-    """).fetchone()[0]
+  rate = len(ok) / len(ads_df)
+  context.log.info(f"Succes: {rate:.1%} ({len(ok)}/{len(ads_df)})")
+  if rate < TARGET:
+    raise dg.Failure(f"Taux {rate:.1%} < 95%. Echecs: {len(ko)}")
 
   return dg.MaterializeResult(
     metadata={
       "ads_processed": dg.MetadataValue.int(len(ads_df)),
-      "success": dg.MetadataValue.int(len(successes)),
-      "failed": dg.MetadataValue.int(len(failures)),
-      "total_in_db": dg.MetadataValue.int(total_profiles),
+      "success": dg.MetadataValue.int(len(ok)),
+      "failed": dg.MetadataValue.int(len(ko)),
       "avg_extraction_time_sec": dg.MetadataValue.float(
-        (sum(r["time"] for r in successes) / len(successes)) if successes else 0.0
+        (sum(r["time"] for r in ok) / len(ok)) if ok else 0.0
       )
     }
   )

@@ -1,7 +1,5 @@
-# adapters/repository.py
 import os
 from ..config import settings
-from ..core.delta import compute_delta
 
 class Repository:
     def __init__(self, conn):
@@ -149,6 +147,35 @@ class Repository:
                 "INSERT INTO silver.ads_errors(post_id, error, post_preview) "
                 "SELECT post_id, error, post_preview FROM errors_df"
             )
+
+    def fetch_ads_to_process(self) -> "pd.DataFrame":
+        return self.conn.execute("""
+            SELECT a.ad_id, a.ad, a.post_type
+            FROM silver.ads a
+            JOIN silver.ads_extraction e USING (ad_id)
+            WHERE e.extraction_status != 'SUCCESS'
+        """).fetch_df()
+
+    def ad_extraction_started(self, ad_id):
+        self.conn.execute(
+          "UPDATE ads SET extraction_status = 'PENDING' WHERE id = ?",
+          [ad_id]
+        )
+
+    def ad_extraction_success(self, ad_id, profiles, dt):
+        self.conn.execute("""
+            UPDATE silver.ads_extraction
+            SET extraction_status="SUCCESS", profile=?, extraction_time=?, extracted_at=now()
+            WHERE ad_id=?
+        """, [profiles.model_dump_json(), dt, ad_id])
+
+    def ad_extraction_failed(self, ad_id, profiles, dt):
+        self.conn.execute("""
+            UPDATE silver.ads_extraction
+            SET extraction_status="FAILURE", extraction_time=?
+            WHERE ad_id=?
+        """, [dt, ad_id])
+    
     # ── silver : split (recalculable) ────────────────────────
     def ensure_gold_schema(self) -> None:
         self.conn.execute("CREATE SCHEMA IF NOT EXISTS gold")

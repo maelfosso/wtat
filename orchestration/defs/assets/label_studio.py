@@ -28,28 +28,28 @@
 #       SELECT 
 #         a.id,
 #         a.ad AS text,
-#         p.entities_advertiser AS advertiser,
-#         p.entities_desired AS desired                                    
+#         p.entities_seeker AS seeker,
+#         p.entities_sought AS sought                                    
 #       FROM ads a
 #       JOIN raw_profiles p ON a.id = p.ad_id
 #       WHERE p.extraction_error IS NULL
-#         AND p.entities_advertiser IS NOT NULL
-#         AND p.entities_desired IS NOT NULL                             
+#         AND p.entities_seeker IS NOT NULL
+#         AND p.entities_sought IS NOT NULL                             
 #     """).fetch_df()
   
 #   # Convertir chaque annonce
 #   tasks = []
 #   for _, row in ads_with_entities.iterrows():
 #     try:
-#       advertiser = json.loads(row["advertiser"])
-#       desired = json.loads(row["desired"])
+#       seeker = json.loads(row["seeker"])
+#       sought = json.loads(row["sought"])
 
 #       tasks.append({
 #         "id": row["id"],
 #         "text": row["text"],
 #         "entities": {
-#           "advertiser": advertiser,
-#           "desired": desired
+#           "seeker": seeker,
+#           "sought": sought
 #         }
 #       })
 #     except Exception as e:

@@ -33,8 +33,8 @@ def transform_profile_data(ad_data: Dict[str, Any]) -> List[Dict[str, Any]]:
   {
     'ad_id': int,
     'profiles': {
-      'advertiser': { ... },  # Structure LLM v2
-      'desired': { ... }    # Structure LLM v2
+      'seeker': { ... },  # Structure LLM v2
+      'sought': { ... }    # Structure LLM v2
     }
   }
   """
@@ -42,12 +42,12 @@ def transform_profile_data(ad_data: Dict[str, Any]) -> List[Dict[str, Any]]:
   ad_id = ad_data['ad_id']
   
   for profile_type, raw_profile in [
-    ('ADVERTISER', ad_data['profiles']['advertiser']),
-    ('DESIRED', ad_data['profiles']['desired'])
+    ('SEEKER', ad_data['profiles']['seeker']),
+    ('SOUGHT', ad_data['profiles']['sought'])
   ]:
     # Mapping robuste des champs (nouveau format + fallback ancien format)
     profile = {
-      'id': 2 * ad_id + (0 if profile_type == 'ADVERTISER' else 1),
+      'id': 2 * ad_id + (0 if profile_type == 'SEEKER' else 1),
       'ad_id': ad_id,
       'profile_type': profile_type,
       

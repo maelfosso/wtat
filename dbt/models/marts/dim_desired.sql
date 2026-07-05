@@ -1,3 +1,3 @@
 select
   *
-from {{ ref('int_data__desired') }}
+from {{ ref('int_data__sought') }}

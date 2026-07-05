@@ -4,7 +4,7 @@ import re
 def evaluate_llm_extraction(
   announcement_text: str,
   extracted_json: Dict[str, Any],
-  profile_type: str = "advertiser"
+  profile_type: str = "seeker"
 ) -> Dict[str, Any]:
   """
   Évalue objectivement la qualité de l'extraction LLM.

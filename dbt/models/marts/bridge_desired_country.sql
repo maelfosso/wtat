@@ -1,14 +1,14 @@
 with base as (
-  select distinct desired_id, unnest(country_of_residence) as country, unnest(continent_of_residence) as continent,
+  select distinct sought_id, unnest(country_of_residence) as country, unnest(continent_of_residence) as continent,
   'residence' as link_type
-  from {{ ref('int_data__desired') }}
+  from {{ ref('int_data__sought') }}
   union
-  select distinct desired_id,  unnest(country_of_origin) as country, unnest(continent_of_origin) as continent,
+  select distinct sought_id,  unnest(country_of_origin) as country, unnest(continent_of_origin) as continent,
     'origin' as link_type
-  from {{ ref('int_data__desired') }}
+  from {{ ref('int_data__sought') }}
 )
 select
-  desired_id,
+  sought_id,
   {{ dbt_utils.generate_surrogate_key(['country', 'continent']) }} AS country_id,
   link_type
 from base

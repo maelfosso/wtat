@@ -1,3 +1,3 @@
 select
   *
-from {{ ref('int_data__advertiser') }}
+from {{ ref('int_data__seeker') }}

@@ -1,5 +1,5 @@
 select
-  profile_id as advertiser_id,
+  profile_id as seeker_id,
   ad_id,
   name,
   sex,
@@ -32,4 +32,4 @@ select
   relationship_goal,
   created_at
 from {{ ref('stg_data__profiles') }}
-where profile_type = 'ADVERTISER'
+where profile_type = 'SEEKER'

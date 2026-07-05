@@ -1,5 +1,5 @@
 select
-  profile_id as desired_id,
+  profile_id as sought_id,
   ad_id,
   name,
   sex,
@@ -32,4 +32,4 @@ select
   relationship_goal,
   created_at
 from {{ ref('stg_data__profiles') }}
-where profile_type = 'DESIRED'
+where profile_type = 'SOUGHT'

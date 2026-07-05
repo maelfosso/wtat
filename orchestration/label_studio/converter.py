@@ -9,7 +9,7 @@ LABEL_STUDIO_CONFIG = """
     .header-des { color: #1976d2; border-bottom: 2px solid #1976d2; margin-top: 20px; }
   </Style>
 
-  <Header value="🔴 PROFIL DE L'ANNONCEUR (ADVERTISER)" class="header-adv"/>
+  <Header value="🔴 PROFIL DE L'ANNONCEUR (SEEKER)" class="header-adv"/>
   
   <Labels name="label_adv" toName="text">
     <Label value="ADV_NAME" background="#D3D3D3"/>
@@ -41,7 +41,7 @@ LABEL_STUDIO_CONFIG = """
     <Label value="ADV_RELATIONSHIP_CRITERIA" background="#0000FF"/>
   </Labels>
 
-  <Header value="🔵 PROFIL RECHERCHÉ (DESIRED)" class="header-des"/>
+  <Header value="🔵 PROFIL RECHERCHÉ (SOUGHT)" class="header-des"/>
   
   <Labels name="label_des" toName="text">
     <Label value="DES_NAME" background="#BDBDBD"/>
@@ -96,8 +96,8 @@ def llm_output_to_label_studio(
   """
   predictions = []
   prefixes = {
-    "advertiser": "ADV_",
-    "desired": "DES_"
+    "seeker": "ADV_",
+    "sought": "DES_"
   }
 
   for profile_type, prefix in prefixes.items():

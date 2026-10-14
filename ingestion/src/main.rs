@@ -1,6 +1,8 @@
-use std::fs;
+use std::{fs};
 use serde::{Serialize, Deserialize};
 use reqwest::header::{HeaderMap, HeaderValue};
+
+use clap::Parser;
 
 use wtat_ingestion::get_posts_from_fb_pages;
 
@@ -9,23 +11,33 @@ struct  ScrapeState {
   last_cursor: Option<String>
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+  #[arg(short, long)]
+  page_id: String,
+}
+
 fn main() {
   dotenvy::dotenv().ok();
   
   let data_path = std::env::var("DATA_PATH").expect(
     "DATA_PATH is missing"
   );
-  let page_id = std::env::var("FB_PAGE_ID").expect("FB_PAGE_ID is missing");
+  // let page_id = std::env::var("FB_PAGE_ID").expect("FB_PAGE_ID is missing");
   let rapid_api_key: String = std::env::var("RAPID_API_KEY").expect(
     "RAPID_API_KEY not set"
   );
   let rapid_api_host: String = std::env::var("RAPID_API_HOST").expect(
     "RAPID_API_HOST not set"
   );
-  let max_pages: u32 = std::env::var("MAX_PAGES")
-    .unwrap_or("0".to_string())
-    .parse()
-    .expect("MAX_PAGES must be a number");
+  // let max_pages: u32 = std::env::var("MAX_PAGES")
+  //   .unwrap_or("0".to_string())
+  //   .parse()
+  //   .expect("MAX_PAGES must be a number");
+
+  let args = Args::parse();
+  let page_id = args.page_id;
 
   let state_path = format!("{}/{}/state.json", data_path, page_id);
   let mut current_cursor = if let Ok(content) = fs::read_to_string(&state_path) {
@@ -49,17 +61,17 @@ fn main() {
     .build().unwrap()
     ;
 
-  let mut current_page = 0;
+  // let mut current_page = 0;
 
   loop {
-    if max_pages > 0 && current_page >= max_pages {
-      println!("Reached the limit: {} pages", max_pages);
-      break;
-    }
+    // if max_pages > 0 && current_page >= max_pages {
+    //   println!("Reached the limit: {} pages", max_pages);
+    //   break;
+    // }
 
     println!("Collecting with cursor: {:?}\n", current_cursor);
 
-    match get_posts_from_fb_pages(&client, &page_id, current_cursor.clone()) {
+    match get_posts_from_fb_pages(&client, &rapid_api_host, &page_id, current_cursor.clone()) {
       Ok(response) => {
         let posts = response.results;
 
@@ -87,10 +99,11 @@ fn main() {
         fs::write(&state_path, state_json).expect("Failed to save state");
 
         std::thread::sleep(std::time::Duration::from_secs(1));
-        current_page += 1;
+        // current_page += 1;
       }
       Err(err) => {
-        eprintln!("Error: {err}")
+        eprintln!("Error: {err}");
+        break;
       }
     }
   }

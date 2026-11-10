@@ -1,12 +1,23 @@
-mod models;
+pub mod models;
 
 use reqwest::blocking::Client;
 use reqwest::Error;
 use tracing::{debug, error};
 
-use models::{GetPostsResponse};
+pub fn is_retryable(err: &reqwest::Error) -> bool {
+    if err.is_timeout() || err.is_connect() {
+        return true;
+    }
 
-pub fn get_posts_from_fb_pages(client: &Client, host: &String, page_id: &String, cursor: Option<String>) -> Result<GetPostsResponse, Error> {
+    match err.status() {
+        Some(status) => {
+            status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        },
+        None => false,
+    }
+}
+
+pub fn get_posts_from_fb_pages(client: &Client, host: &String, page_id: &String, cursor: Option<String>) -> Result<models::GetPostsResponse, Error> {
     let mut url = format!(
         "https://{}/page/posts?page_id={}",
         host,
@@ -24,7 +35,7 @@ pub fn get_posts_from_fb_pages(client: &Client, host: &String, page_id: &String,
     };
     debug!(url = %truncated_url, "Fetching posts");
 
-    let response = client.get(url).send()?;
+    let response = client.get(url).send()?.error_for_status()?;
     let text = response.text()?;
     // Removed the full JSON dump for privacy
     

@@ -1,11 +1,22 @@
-use std::{fs, time::Instant};
+use std::fs;
+use std::process::ExitCode;
+use std::time::{Duration, Instant};
+
 use serde::{Serialize, Deserialize};
 use reqwest::header::{HeaderMap, HeaderValue};
-use tracing::{info, debug, error, span, Level};
+use tracing::{info, debug, error, warn, span, Level};
 
 use clap::Parser;
 
-use wtat_ingestion::get_posts_from_fb_pages;
+use wtat_ingestion::{get_posts_from_fb_pages, is_retryable};
+
+use wtat_ingestion::models::StopReason;
+
+const REQUEST_TIMEOUT_SECS: u64 = 60;
+const MAX_ATTEMPTS: u32 = 3;
+const BASE_BACKOFF_SECS: u64 = 5;
+const PAGE_DELAY_SECS: u64 = 1;
+
 
 #[derive(Serialize, Deserialize)]
 struct  ScrapeState {
@@ -57,7 +68,7 @@ fn init_tracing(log_path: &str) -> WorkerGuard {
     guard
 }
 
-fn main() {
+fn main() -> ExitCode {
     dotenvy::dotenv().ok();
 
     let log_path = std::env::var("LOG_PATH").expect("LOG_PATH is missing");
@@ -73,10 +84,6 @@ fn main() {
     let rapid_api_host: String = std::env::var("RAPID_API_HOST").expect(
         "RAPID_API_HOST not set"
     );
-    // let max_pages: u32 = std::env::var("MAX_PAGES")
-    //   .unwrap_or("0".to_string())
-    //   .parse()
-    //   .expect("MAX_PAGES must be a number");
 
     let args = Args::parse();
     let page_id = args.page_id;
@@ -100,10 +107,10 @@ fn main() {
 
     let client = reqwest::blocking::Client::builder()
         .default_headers(headers)
-        .build().unwrap()
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+        .build()
+        .unwrap()
         ;
-
-    // let mut current_page = 0;
     
     let start_time = Instant::now();
     let mut total_posts = 0;
@@ -112,71 +119,91 @@ fn main() {
     let collect_span = span!(Level::INFO, "collect", page_id = page_id.clone());
     let _enter = collect_span.enter();
 
-    loop {
-        // if max_pages > 0 && current_page >= max_pages {
-        //   info!("Reached the limit: {} pages", max_pages);
-        //   break;
-        // }
+    let stop_reason = loop {
+
+        let request_start = Instant::now();
+        let mut attempt = 1;
 
         debug!("Collecting with cursor: {:?}", current_cursor);
 
-        match get_posts_from_fb_pages(&client, &rapid_api_host, &page_id, current_cursor.clone()) {
-            Ok(response) => {
-                let posts = response.results;
-                let page_start_time = Instant::now();
-                
-                pages_fetched += 1;
-                total_posts += posts.len();
-
-                for post in &posts {
-                    let filename = format!("{}/{}.json", dir_path, post.post_id);
-
-                    let mut err = format!("Serialization error for post: {}", post.post_id);
-                    let json_data = serde_json::to_string_pretty(&post)
-                        .expect(&err);
-
-                    err = format!("Error writing file: {}", post.post_id);
-                    fs::write(filename, json_data).expect(&err);
-                    
-                    debug!(post_id = %post.post_id, "Post written to file");
+        let result = loop {
+            match get_posts_from_fb_pages(&client, &rapid_api_host, &page_id, current_cursor.clone()) {
+                Ok(response) => break Ok(response),
+                Err(err) if is_retryable(&err) && attempt < MAX_ATTEMPTS => {
+                    let backoff = Duration::from_secs(BASE_BACKOFF_SECS * 2u64.pow(attempt - 1));
+                    warn!(
+                        attempt,
+                        max_attemps = MAX_ATTEMPTS,
+                        backoff_secs = backoff.as_secs(),
+                        error = %err.without_url(),
+                        "Request failed, retrying"
+                    );
+                    std::thread::sleep(backoff);
+                    attempt += 1;
                 }
-                
-                let page_duration = page_start_time.elapsed().as_millis();
-                
-                info!(
-                    page = pages_fetched,
-                    posts_received = posts.len(),
-                    files_written = posts.len(),
-                    duration_ms = page_duration
-                );
-
-                if response.cursor.is_none() || response.cursor == current_cursor {
-                    info!("End of pagination.");
-                    break;
-                }
-
-                current_cursor = response.cursor;
-                let state = ScrapeState {
-                    last_cursor: current_cursor.clone()
-                };
-                let state_json = serde_json::to_string(&state).unwrap();
-                fs::write(&state_path, state_json).expect("Failed to save state");
-
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                // current_page += 1;
+                Err(err) => break Err(err),
             }
+        };
+
+        let response = match result {
+            Ok(response) => response,
             Err(err) => {
-                error!("Error: {}", err);
-                break;
+                let reason = if is_retryable(&err) {
+                    StopReason::RetriesExhausted
+                } else {
+                    StopReason::FatalError
+                };
+                error!(attempts = attempt, error = %err.without_url(), "Request failed, stopping");
+                break reason;
             }
+        };
+
+        let posts = response.results;
+        pages_fetched += 1;
+        total_posts += posts.len();
+
+        for post in &posts {
+            let filename = format!("{}/{}.json", dir_path, post.post_id);
+            let json_data = serde_json::to_string_pretty(&post)
+                .unwrap_or_else(|e| panic!("Serialization error for post {}: {}", post.post_id, e));
+            fs::write(filename, json_data)
+                .unwrap_or_else(|e| panic!("Error writing file for post {}: {}", post.post_id, e));
+            debug!(post_id = %post.post_id, "Post written to file");
         }
-    }
-    
-    let total_duration = start_time.elapsed();
+
+        info!(
+            page = pages_fetched,
+            posts_received = posts.len(),
+            attempts = attempt,
+            duration_ms = request_start.elapsed().as_millis() as u64,
+            "Page fetched"
+        );
+
+        if response.cursor.is_none() || response.cursor == current_cursor {
+            break StopReason::EndOfPagination;
+        }
+
+        current_cursor = response.cursor;
+        let state = ScrapeState {
+            last_cursor: current_cursor.clone()
+        };
+        let state_json = serde_json::to_string(&state).unwrap();
+        fs::write(&state_path, state_json).expect("Failed to save state");
+
+        std::thread::sleep(std::time::Duration::from_secs(PAGE_DELAY_SECS));
+    };
+
     info!(
-        pages_fetched = pages_fetched,
+        pages_fetched,
         posts_written = total_posts,
-        duration_ms = total_duration.as_millis(),
-        stop_reason = "end_of_pagination"
+        duration_ms = start_time.elapsed().as_millis() as u64,
+        stop_reason = stop_reason.as_str(),
+        "Collection finished"
     );
+
+    if stop_reason == StopReason::EndOfPagination {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }

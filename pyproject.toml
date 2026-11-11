@@ -19,6 +19,8 @@ dependencies = [
 dev = [
     "dagster-webserver",
     "dagster-dg-cli",
+    "jupyterlab>=4.6.6",
+    "pyarrow>=25.0.1",
 ]
 
 [build-system]

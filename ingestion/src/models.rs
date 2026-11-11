@@ -121,6 +121,7 @@ pub struct CommentAuthor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StopReason {
     EndOfPagination,
+    ReachedUntil,
     RetriesExhausted,
     FatalError,
 }
@@ -129,6 +130,7 @@ impl StopReason {
     pub fn as_str(self) -> &'static str {
         match self {
             StopReason::EndOfPagination => "end_of_pagination",
+            StopReason::ReachedUntil => "reached_until",
             StopReason::RetriesExhausted => "retries_exhausted",
             StopReason::FatalError => "fatal_error",
         }

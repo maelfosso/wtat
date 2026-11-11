@@ -5,7 +5,7 @@ use reqwest::Error;
 use tracing::{debug, error};
 
 pub fn is_retryable(err: &reqwest::Error) -> bool {
-    if err.is_timeout() || err.is_connect() {
+    if err.is_timeout() || err.is_connect() || err.is_request() {
         return true;
     }
 
